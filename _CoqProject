@@ -21,11 +21,12 @@ models/Sets.v
 models/FreeCategories.v
 models/Signature.v
 models/EffectSignatures.v
-#models/IntSpec.v
+models/IntSpec.v
+models/IntStratC.v
 models/Coherence.v
 #models/IntStrat.v
 models/LinCCAL.v
-#examples/CAL.v
+examples/CAL.v
 interfaces/Category.v
 interfaces/Functor.v
 interfaces/MonoidalCategory.v

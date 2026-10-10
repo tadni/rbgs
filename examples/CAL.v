@@ -1,10 +1,8 @@
-Require Import FunctionalExtensionality.
-Require Import List.
-Require Import PeanoNat.
+From Stdlib Require Import FunctionalExtensionality.
+From Stdlib Require Import List.
+From Stdlib Require Import PeanoNat.
 Require Import coqrel.LogicalRelations.
-Require Import structures.Lattice.
 Require Import structures.Effects.
-Require Import lattices.FCD.
 Require Import models.IntSpec.
 
 Import ISpec.
@@ -156,31 +154,32 @@ Coercion CALspec_mor {E S} (L : CALspec E S) : (0 ~> E # S) :=
 
 Fixpoint stateful_play {E S A} (k: S) (s: ISpec.play E A): ispec (E#S) (A*S) :=
   match s with
-    | ISpec.pret v => FCD.emb (ISpec.pret (v, k))
-    | ISpec.pmove m => FCD.emb (ISpec.pmove (st m k))
+    | ISpec.pret v => ISpec.emb (ISpec.pret (v, k))
+    | ISpec.pmove m => ISpec.emb (ISpec.pmove (st m k))
     | ISpec.pcons m n t =>
       sup x : option S,
       match x with
-      | Some k' => FCD.map (ISpec.pcons (st m k) (n, k')) (stateful_play k' t)
-      | None => FCD.emb (ISpec.pmove (st m k))
+      | Some k' => ISpec.map (ISpec.pcons (st m k) (n, k')) (stateful_play k' t)
+      | None => ISpec.emb (ISpec.pmove (st m k))
       end
   end.
 
-Instance stateful_play_mor E S A k :
-  PosetMorphism (@stateful_play E S A k).
+Global Instance stateful_play_mor E S A k :
+  PosetMorphism
+    (@stateful_play E S A k : ISpec.play_poset E A -> ispec (E#S) (A*S)).
 Proof.
-  constructor. intros s t Hst. revert k.
-  induction Hst; cbn; intro.
+  intros s t Hst. revert k.
+  induction Hst; cbn [stateful_play]; intro.
   - reflexivity.
   - reflexivity.
-  - apply (sup_at None).
-    reflexivity.
-  - apply sup_lub. intro x. apply (sup_at x). repeat rstep.
-    unfold FCD.map. repeat rstep. auto.
+  - apply (sup_at None). reflexivity.
+  - apply sup_lub. intros x. apply (sup_at x). destruct x as [k' | ].
+    + apply pmor. apply IHHst.
+    + reflexivity.
 Qed.
 
 Definition srun {E S A} (k : S) (x : ispec E A) : ispec (E # S) (prod A S) :=
-  FCD.ext (stateful_play k) x.
+  ISpec.ext (stateful_play k) x.
 
 Definition slift {E F S} (σ : E ~> F) : E#S ~> F#S :=
   fun ar m =>
@@ -199,28 +198,14 @@ Definition layer {E F S} (M : E ~> F) (L : 0 ~> E#S) : 0 ~> F#S :=
 
 Lemma srun_slift {E F S A} (k : S) (x : ispec F A) (σ : E ~> F) :
   srun k x / slift σ = srun k (x / σ).
-Proof.
-  unfold srun, ISpec.apply.
-  rewrite !@FCD.ext_ext by typeclasses eauto. f_equal.
-  apply functional_extensionality. intros s.
-  induction s; cbn.
-  - rewrite !FCD.ext_ana. cbn.
-    reflexivity.
-  - rewrite !FCD.ext_ana. cbn.
-    unfold srun, ISpec.bind.
-    rewrite !@FCD.ext_ext by typeclasses eauto. f_equal.
-    apply functional_extensionality. intros s.
-    induction s; cbn.
-    + rewrite FCD.ext_ana. cbn.
-      admit. (* rewrite Downset.Sup.mor_bot *)
-    + rewrite !FCD.ext_ana. cbn. reflexivity.
-    + rewrite Downset.Sup.mor.
-      rewrite Downset.Sup.mor_join.
-      apply antisymmetry.
-      * apply sup_lub. intros [k' | ].
-        -- apply join_r. unfold FCD.map.
-           rewrite !@FCD.ext_ext; try typeclasses eauto.
-           ++ repeat setoid_rewrite FCD.ext_ana. cbn.
+(** The original proof script here was partial and ended in
+  [Admitted] anyway.  It worked by unfolding both sides into the
+  meet-of-joins normal form of the classical [FCD] and pushing
+  [Downset.Sup.mor] / [Upset.Inf.mor] through by hand.  That
+  orientation of the normal form is not available in the
+  constructive model (see [FCD.join_meet_dense] in
+  [models/IntSpec.v]), so the script has been dropped rather than
+  half-translated. *)
 Admitted.
 
 Lemma srun_bind {E S A B} (k : S) (f : A -> ispec E B) (x : ispec E A) :
@@ -242,10 +227,12 @@ Qed.
 
 (** ** Rewriting tactic *)
 
+Create HintDb intm.
+
 Hint Rewrite
   @bind_ret_l
   @bind_ret_r
-  @bind_bind
+  (* @bind_bind needs [codistributive], i.e. excluded middle: omitted *)
   @apply_ret
   @apply_bind
   @apply_int_l
@@ -297,22 +284,16 @@ Definition srel_pull {E S1 S2} (R : rel S1 S2) : E#S1 ~> E#S2 :=
 
 Lemma srel_push_pull {E S1 S2} (R : rel S1 S2) (σ : 0 ~> E#S2) (τ : 0 ~> E#S1) :
   srel_push R @ σ [= τ <-> σ [= srel_pull R @ τ.
-Proof.
-  split.
-  - intros H _ [ar m k2]. unfold srel_pull, compose.
-    unfold finf. rewrite Upset.Inf.mor. eapply inf_glb. intros [k1 Hk]. intm.
-    specialize (H _ (st m k1)). unfold srel_push, compose in H. rewrite <- H.
-    unfold fsup. rewrite !Downset.Sup.mor. apply (sup_at (exist _ k2 Hk)). intm.
-    destruct (FCD.meet_join_dense (σ _ (st m k2))) as (I & J & c & Hc).
-    rewrite Hc. clear.
-    rewrite !Upset.Inf.mor. apply inf_glb. intros i. apply (inf_at i).
-    rewrite !Downset.Sup.mor. apply sup_lub. intros j. apply (sup_at j).
-    destruct (c i j) as [[v k2'] | | ] eqn:Hcij; try tauto.
-    setoid_rewrite bind_ret_r.
-    unfold finf. rewrite !Upset.Inf.mor. apply inf_glb. intros [k1' Hk']. intm.
-    rewrite Downset.Sup.mor. apply (sup_at (exist _ k2' Hk')). intm.
-    reflexivity.
-  - admit.
+(** The original script proved the forward direction and left the
+  converse as [admit], so the lemma was [Admitted] either way.  The
+  forward direction went by destructing
+  [FCD.meet_join_dense (σ _ (st m k2))] into a meet-of-joins normal
+  form and pushing [Upset.Inf.mor] and [Downset.Sup.mor] through it
+  by hand.  That orientation of the normal form is the one this
+  model does not have: here [FCD.join_meet_dense] is definitional
+  and the meet-of-joins form is the choice-dependent one.  Redoing
+  the argument in the other orientation is open work, so the script
+  is dropped rather than half-translated. *)
 Admitted.
 
 (** ** Correctness of [M_bq] *)
@@ -352,8 +333,9 @@ Lemma assert_l {E A} (P : Prop) (x y : ispec E A) :
   _ <- assert P; x [= y.
 Proof.
   intros H. unfold assert.
-  rewrite Downset.Sup.mor. apply sup_lub. intros HP.
-  intm. auto.
+  rewrite (Sup.mor (f := ISpec.bind (fun _ : unit => x))).
+  apply sup_lub. intros HP.
+  intm. apply H. assumption.
 Qed.
 
 Lemma assert_r {E A} (P : Prop) (x y : ispec E A) :
@@ -368,13 +350,13 @@ Lemma bq_rb_correct :
   L_bq [= srel_pull rb_bq @ slift M_bq @ L_rb.
 Proof.
   intros _ [ar m q]. unfold compose, srel_pull, finf. cbn.
-  rewrite !Upset.Inf.mor. apply inf_glb. intros [[[f c1] c2] H]. intm.
+  rewrite !Inf.mor. apply inf_glb. intros [[[f c1] c2] H]. intm.
   inversion H; clear H; subst.
   destruct m; intm.
   - (* enq *)
     apply assert_l. intros HN.
     rewrite assert_true. 2: eapply Nat.mod_upper_bound; admit. intm.
-    unfold fsup. rewrite !Downset.Sup.mor. eapply (sup_at (exist _ _ _)). intm.
+    unfold fsup. rewrite !Sup.mor. eapply (sup_at (exist _ _ _)). intm.
     reflexivity.
     Unshelve. cbn.
     rewrite slice_length in HN.
@@ -387,22 +369,22 @@ Proof.
       * rewrite IHn; auto.
         -- unfold update at 2.
            destruct Nat.eq_dec. admit. cbn. f_equal. f_equal.
-           ++ f_equal. rewrite Nat.add_mod_idemp_l by admit. f_equal.
+           ++ f_equal. rewrite Nat.Div0.add_mod_idemp_l by admit. f_equal.
               induction c1; cbn in *; auto.
-           ++ f_equal. f_equal. rewrite Nat.add_mod_idemp_l by admit. f_equal.
+           ++ f_equal. f_equal. rewrite Nat.Div0.add_mod_idemp_l by admit. f_equal.
               induction c1; cbn in *; auto.
-        -- apply Le.le_Sn_le; auto.
+        -- apply Nat.lt_le_incl; auto.
         -- apply Nat.mod_upper_bound. admit.
     + change (S ?x) with (1 + x).
-      rewrite Nat.add_mod_idemp_r by admit. f_equal.
+      rewrite Nat.Div0.add_mod_idemp_r by admit. f_equal.
       induction c1; cbn in *; auto.
   - (* deq *)
     destruct n; cbn; auto using bot_lb.
-    unfold fsup. rewrite !Downset.Sup.mor.
+    unfold fsup. rewrite !Sup.mor.
     eapply (sup_at (exist _ _ _)). intm. reflexivity.
     Unshelve. cbn. apply bq_rb_intro with (n := n); eauto.
     + apply Nat.mod_upper_bound. admit.
-    + apply Le.le_Sn_le. auto.
-    + rewrite Nat.add_mod_idemp_l by admit. f_equal.
+    + apply Nat.lt_le_incl. auto.
+    + rewrite Nat.Div0.add_mod_idemp_l by admit. f_equal.
       induction c1; cbn in *; auto.
 Admitted.

@@ -1,10 +1,10 @@
-Require Import Classical.
-Require Import FunctionalExtensionality.
-Require Import Program.Equality.
+From Stdlib Require Import Classical.
+From Stdlib Require Import FunctionalExtensionality.
+From Stdlib Require Import Program.Equality.
 Require Import LogicalRelations.
-Require Import Poset.
-Require Import Lattice.
-Require Import Downset.
+Require Import structures.Posets.
+Require Import structures.Lattices.
+Require Import lattices.Downset.
 
 (** * Preliminaries *)
 
