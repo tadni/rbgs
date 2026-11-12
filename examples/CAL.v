@@ -229,17 +229,85 @@ Qed.
 
 Create HintDb intm.
 
+(** [apply_bind] and [apply_int_r] only hold for angelic layers and
+  continuations (see [models/IntSpec.v]), so the rewriting tactic has
+  to check that.  The layers of this file are all angelic. *)
+
+Lemma angelic_stateful_play {E S A} (k : S) (s : ISpec.play E A) :
+  angelic (stateful_play k s).
+Proof.
+  revert k. induction s; intros k; cbn [stateful_play].
+  - apply angelic_emb.
+  - apply angelic_emb.
+  - apply angelic_sup. intros [k' | ].
+    + unfold ISpec.map. apply angelic_ext.
+      * typeclasses eauto.
+      * apply IHs.
+      * intros p. apply angelic_emb.
+    + apply angelic_emb.
+Qed.
+
+Lemma angelic_srun {E S A} (k : S) (x : ispec E A) :
+  angelic x -> angelic (srun k x).
+Proof.
+  intros Hx. unfold srun. apply angelic_ext.
+  - typeclasses eauto.
+  - exact Hx.
+  - intros p. apply angelic_stateful_play.
+Qed.
+
+Lemma angelic_assert {E} (P : Prop) :
+  angelic (@assert E P).
+Proof.
+  unfold assert. apply angelic_sup. intros _. apply angelic_ret.
+Qed.
+
+Ltac head_of t :=
+  lazymatch t with
+    | ?f _ => head_of f
+    | _ => t
+  end.
+
+Ltac angelic_step :=
+  lazymatch goal with
+    | |- angelic (match ?x with _ => _ end) => destruct x
+    | |- angelic (ISpec.bind _ _) => apply angelic_bind
+    | |- angelic (ISpec.ret _) => apply angelic_ret
+    | |- angelic (ISpec.int _) => apply angelic_int
+    | |- angelic (ISpec.emb _) => apply angelic_emb
+    | |- angelic (assert _) => apply angelic_assert
+    | |- angelic (srun _ _) => apply angelic_srun
+    | |- angelic (ISpec.apply _ _) => apply angelic_apply
+    | |- angelic bot => apply angelic_bot
+    | |- angelic (fsup _ _) => unfold fsup
+    | |- angelic (lsup _) => apply angelic_sup
+    | |- angelic_subst (ISpec.compose _ _) => apply angelic_subst_compose
+    | |- angelic_subst _ => intros ? ?
+    | |- forall _, _ => intro
+    | |- angelic ?x => let h := head_of x in progress unfold h
+  end.
+
+Ltac angelic :=
+  cbn; repeat (angelic_step; cbn beta iota).
+
+Lemma angelic_L_rb : angelic_subst L_rb.
+Proof. angelic. Qed.
+
+Lemma angelic_M_bq : angelic_subst (slift (S := rb_state) M_bq).
+Proof. angelic. Qed.
+
 Hint Rewrite
   @bind_ret_l
   @bind_ret_r
   (* @bind_bind needs [codistributive], i.e. excluded middle: omitted *)
   @apply_ret
-  @apply_bind
   @apply_int_l
-  @apply_int_r
   @srun_bind
   @srun_int
   : intm.
+
+Hint Rewrite @apply_bind_ang using solve [angelic] : intm.
+Hint Rewrite @apply_int_r_ang using solve [angelic] : intm.
 
 Hint Rewrite @assert_true using solve [auto] : intm.
 
@@ -258,7 +326,7 @@ Goal
     ISpec.ret (f 2, (f, 3, 5)).
 Proof.
   intros f. unfold layer.
-  rewrite <- ISpec.apply_assoc. intm.
+  rewrite <- ISpec.apply_assoc_ang by angelic. intm.
   rewrite assert_true by admit. intm.
   rewrite Nat.mod_small by admit.
   reflexivity.

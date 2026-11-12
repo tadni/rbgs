@@ -66,17 +66,25 @@
   by construction, and the lemmas that previously destructed
   [FCD.join_meet_dense] become choice-free.
 
-  Three laws about applying a substitution ([ISpec.apply_int_r],
-  [ISpec.apply_bind], [ISpec.apply_assoc]) are still admitted, as
-  they were classically; what has changed is that we can now say
-  precisely what blocks them.  [ISpec.apply] is a *nested* pair of
-  [FCD.ext]s, and exchanging them has to move an [inf] past a [join]
-  -- codistributivity, hence excluded middle.  The [IRun] module at
-  the end of the file shows the obstruction is this nesting and not
-  interaction itself: dropping the demonic side, so that the lattice
-  is a plain [Downset.F] and substitution is a *single*
-  sup-extension over an inductively generated relation on
-  interaction sequences, makes layer composition a category outright
+  Three laws about applying a substitution ([apply_int_r],
+  [apply_bind], [apply_assoc]) were admitted in the classical
+  development.  As stated there the first two are false, classically
+  as well as constructively: [ISpecCounterexamples] refutes the unit
+  law and both inclusions of [apply_bind].  A play fixes the answer
+  of each move before the substituted call has run, so a
+  substitution which chooses its answer demonically has nothing to
+  be substituted into; and [ISpec.apply], being an extension over
+  plays, resolves the demonic choices of its argument before the
+  angelic choices of the substitution.  The laws do hold for
+  _angelic_ substitutions, those whose components are joins of plays
+  ([ISpec.apply_int_r_ang], [ISpec.apply_bind_ang],
+  [ISpec.apply_assoc_ang]), with no appeal to distributivity, and
+  these form a category acting on arbitrary specifications.  The
+  [IRun] module at the end of the file builds the same category
+  directly: there the lattice is a plain [Downset.F] and
+  substitution is a *single* sup-extension over an inductively
+  generated relation on interaction sequences, which makes layer
+  composition a category outright
   -- [IRun.rcompose_assoc], [IRun.rcompose_rid_l] and
   [IRun.rcompose_rid_r], each depending on nothing but the two
   extensionality axioms.
@@ -2387,8 +2395,9 @@ Module ISpec.
     - [pmove m] asks for
         [bind (fun _ => bot) z = bind k (bind (fun _ => bot) z)],
       i.e. that a computation which discards its value absorbs any
-      later continuation.  [bind_bind_le] gives [[=]; the converse is
-      the missing half of [bind_bind].
+      later continuation.  [bind_bind_le] gives [[=], and the converse
+      holds too: [bot] is angelic, so this is an instance of
+      [bind_bind_ang] below.
 
     - [pcons m n q] asks for an *exchange*: writing [z] for
       [pbind h q] and [y] for [f _ m],
@@ -2396,81 +2405,437 @@ Module ISpec.
            = bind (fun n' => ext (fun s => c s n') z) y]
       which swaps an extension over the plays of the continuation
       with a bind into the plays of the substituted call.  Neither
-      inclusion is available: pushing the [inf]s of one normal form
-      past the [join] of the other is codistributivity again, in
-      both directions.
+      inclusion holds in general, in any logic: the left-hand side
+      resolves the demonic choices of [z] before the angelic choices
+      of [y], and the right-hand side after them.
+      [ISpecCounterexamples] has an instance of each failure.
 
-    Both obligations are the same phenomenon: [pbind] joins
-    [emb (pmove m)] onto its recursive call because [bot] is global,
-    and that join then has to cross an [inf].  Note the exchange is
-    not a commutation of independent effects -- in [apply f (bind h y)]
-    the substituted call [f _ m] runs first and the continuation
-    resumes after it, so the two sides enumerate the *same*
-    interactions, just bracketed differently.  That is the shape of
-    an argument about interaction sequences rather than about
-    distributivity, which suggests defining [apply] by a single
-    extension over an inductively generated set of interaction
-    sequences -- the design of Chapter 7 of the thesis -- instead of
-    by nested extensions as here. *)
+    The exchange is sound when [y] and [z] are both angelic, since
+    then both extensions are plain [sup]s.  That is the case proved
+    below.  For the general case one would have to define [apply] by
+    a single extension over an inductively generated set of
+    interaction sequences -- the design of Chapter 7 of the thesis,
+    carried out for the angelic model in [IRun] -- instead of by
+    nested extensions as here. *)
 
-  (** ** Laws that remain open
+  (** ** Angelic specifications
 
-    The three laws below were admitted in the classical development
-    too, and we do not improve on that here; what has changed is
-    that nothing else in this file depends on choice, so the gap is
-    now isolated.
+    A specification is _angelic_ when it is the join of the plays
+    below it: every one of its generators contains a play that the
+    specification allows by itself.  [ret], [emb], [int] and [bot]
+    are angelic, and so is anything built from them with [sup] and
+    [bind].  A nontrivial [inf] is not, and neither is [top].
 
-    For [apply_int_r] the missing inclusion is
-    [f ar m [= apply f (int m)].  Pointwise on plays one does have
-    [emb p [= (sup n, pbind (k n) p) || pbind (fun _ => bot) p], but
-    turning that into a statement about [f ar m] requires moving a
-    [sup] and a [join] out through the [inf]s of the normal form -
-    again codistributivity, as for [bind_bind].  [apply_bind] and
-    [apply_assoc] additionally require commuting an [ext] over the
-    plays of the argument with a [bind] over [f ar m], which does
-    not reduce to [codistributive] in any way we have found.
+    Angelic specifications are where the nested extensions of this
+    file can be exchanged without any distributivity: an extension
+    over an angelic argument is a plain [sup] over its plays
+    ([ext_angelic]). *)
 
-    Note that assuming [codistributive] - equivalently, by
-    [codist_lem] below, excluded middle - would not by itself close
-    these three: the thesis proves them (Lemma 6.7) by induction on
-    plays using properties of FCD, and that argument has simply not
-    been carried out here.
+  Definition angelic {E A} (x : t E A) :=
+    forall U, Downset.has x U -> exists p, emb p [= x /\ Upset.uhas U p.
 
-    The [IRun] module at the end of this file shows that all three
-    *are* available constructively once the demonic side is dropped:
-    there [rcompose_rid_l] is [apply_int_r], [rcompose_assoc] is
-    [apply_assoc], and no [applies_bind] hypothesis is needed,
-    because substitution is a single [sup]-extension over an
-    inductively generated relation rather than two nested
-    [FCD.ext]s.  So the obstruction is not interaction; it is the
-    [inf] that [FCD] interposes. *)
+  Lemma has_emb {E A} (p : play E A) (U : Upset.upset (play_poset E A)) :
+    Downset.has (emb p) U <-> Upset.uhas U p.
+  Proof.
+    apply Upset.uhas_up.
+  Qed.
 
-  Lemma apply_int_r {E F ar} (m : F ar) (f : subst E F) :
+  Lemma angelic_emb {E A} (p : play E A) :
+    angelic (emb p).
+  Proof.
+    intros U HU. exists p. split.
+    - reflexivity.
+    - apply has_emb. exact HU.
+  Qed.
+
+  Lemma angelic_sup {E A I} (x : I -> t E A) :
+    (forall i, angelic (x i)) -> angelic (sup i, x i).
+  Proof.
+    intros H U HU. apply Downset.has_lsup in HU. destruct HU as [i HU].
+    destruct (H i U HU) as (p & Hp & HpU).
+    exists p. split; [ | exact HpU]. apply (sup_at i). exact Hp.
+  Qed.
+
+  Lemma angelic_bot {E A} :
+    angelic (bot : t E A).
+  Proof.
+    intros U HU. apply has_bot in HU. destruct HU.
+  Qed.
+
+  Lemma angelic_join {E A} (x y : t E A) :
+    angelic x -> angelic y -> angelic (x || y).
+  Proof.
+    intros Hx Hy U HU. apply has_join in HU. destruct HU as [HU | HU].
+    - destruct (Hx U HU) as (p & Hp & HpU). exists p. split; [ | exact HpU].
+      apply join_l. exact Hp.
+    - destruct (Hy U HU) as (p & Hp & HpU). exists p. split; [ | exact HpU].
+      apply join_r. exact Hp.
+  Qed.
+
+  Lemma ext_at {E A} {L : ccdlattice} (k : play_poset E A -> L)
+        (Hk : PosetMorphism k) (p : play E A) (x : t E A) :
+    emb p [= x -> k p [= ext k x.
+  Proof.
+    intros H. rewrite <- (ext_ana k p).
+    exact (Sup.mor_ref (ext k) _ _ _ H).
+  Qed.
+
+  Lemma ext_angelic {E A} {L : ccdlattice} (k : play_poset E A -> L)
+        (x : t E A) :
+    PosetMorphism k -> angelic x ->
+    ext k x = sup {p | emb p [= x}, k p.
+  Proof.
+    intros Hk Hx. apply antisymmetry.
+    - unfold ext, FCD.ext. apply fsup_lub. intros U HU.
+      destruct (Hx U HU) as (p & Hp & HpU).
+      apply (fsup_at p); [exact Hp | ].
+      unfold FCD.gen. apply (finf_lb p). exact HpU.
+    - apply fsup_lub. intros p Hp. apply ext_at; assumption.
+  Qed.
+
+  Lemma angelic_ext {E A F B} (k : play_poset E A -> t F B) (x : t E A) :
+    PosetMorphism k -> angelic x -> (forall p, angelic (k p)) ->
+    angelic (ext k x).
+  Proof.
+    intros Hk Hx H. rewrite ext_angelic by assumption.
+    unfold fsup. apply angelic_sup. intros [p Hp]. apply H.
+  Qed.
+
+  Lemma pcext_mono {E A X} (m : E X) (n : X) (x y : t E A) :
+    x [= y -> pcext m n x [= pcext m n y.
+  Proof.
+    exact (Sup.mor_ref (pcext m n) _ x y).
+  Qed.
+
+  Lemma bind_arg_mono {E A B} (g : A -> t E B) (x y : t E A) :
+    x [= y -> bind g x [= bind g y.
+  Proof.
+    exact (Sup.mor_ref (bind g) _ x y).
+  Qed.
+
+  Lemma apply_arg_mono {E F A} (f : subst E F) (x y : t F A) :
+    x [= y -> apply f x [= apply f y.
+  Proof.
+    exact (Sup.mor_ref (apply f) _ x y).
+  Qed.
+
+  Lemma angelic_pcext {E A X} (m : E X) (n : X) (x : t E A) :
+    angelic x -> angelic (pcext m n x).
+  Proof.
+    intros Hx. unfold pcext. apply angelic_ext.
+    - typeclasses eauto.
+    - exact Hx.
+    - intros p. apply angelic_emb.
+  Qed.
+
+  Lemma angelic_pbind {E A B} (g : A -> t E B) (p : play E A) :
+    (forall a, angelic (g a)) -> angelic (pbind g p).
+  Proof.
+    intros Hg. induction p; cbn [pbind].
+    - apply Hg.
+    - apply angelic_emb.
+    - apply angelic_join.
+      + apply angelic_emb.
+      + apply angelic_pcext. assumption.
+  Qed.
+
+  Lemma angelic_bind {E A B} (g : A -> t E B) (x : t E A) :
+    angelic x -> (forall a, angelic (g a)) -> angelic (bind g x).
+  Proof.
+    intros Hx Hg. unfold bind. apply angelic_ext.
+    - typeclasses eauto.
+    - exact Hx.
+    - intros p. apply angelic_pbind. exact Hg.
+  Qed.
+
+  Lemma angelic_ret {E A} (a : A) :
+    angelic (ret (E := E) a).
+  Proof.
+    apply angelic_emb.
+  Qed.
+
+  Lemma angelic_int {E ar} (m : E ar) :
+    angelic (int m).
+  Proof.
+    unfold int. apply angelic_sup. intros [n | ]; apply angelic_emb.
+  Qed.
+
+  (** A substitution is angelic when all of its components are. *)
+
+  Definition angelic_subst {E F} (f : subst E F) :=
+    forall ar (m : F ar), angelic (f ar m).
+
+  Lemma angelic_papply {E F A} (f : subst E F) (p : play F A) :
+    angelic_subst f -> angelic (papply f p).
+  Proof.
+    intros Hf. induction p; cbn [papply].
+    - apply angelic_emb.
+    - apply angelic_bind; [apply Hf | ]. intros _. apply angelic_bot.
+    - apply angelic_bind; [apply Hf | ]. intros n'.
+      apply angelic_sup. intros _. assumption.
+  Qed.
+
+  Lemma angelic_apply {E F A} (f : subst E F) (x : t F A) :
+    angelic_subst f -> angelic x -> angelic (apply f x).
+  Proof.
+    intros Hf Hx. unfold apply. apply angelic_ext.
+    - typeclasses eauto.
+    - exact Hx.
+    - intros p. apply angelic_papply. exact Hf.
+  Qed.
+
+  Lemma angelic_subst_int {E} :
+    angelic_subst (@int E).
+  Proof.
+    intros ar m. apply angelic_int.
+  Qed.
+
+  Lemma angelic_subst_compose {E F G} (g : subst F G) (f : subst E F) :
+    angelic_subst f -> angelic_subst g -> angelic_subst (compose g f).
+  Proof.
+    intros Hf Hg ar m. unfold compose. apply angelic_apply; auto.
+  Qed.
+
+  (** ** Associativity for angelic continuations
+
+    The join that [pbind] adds can be pulled out of an extension over
+    an angelic argument, since no [inf] stands in the way.  So
+    [bind_bind] also holds when the _inner_ continuation is angelic;
+    the outer one is unrestricted, and may be [bot]. *)
+
+  Lemma join_ext_join_ang {E A B} (a : t E B) (k : play_poset E A -> t E B)
+        (z : t E A) :
+    PosetMorphism k -> angelic z ->
+    a || ext (fun s => a || k s) z = a || ext k z.
+  Proof.
+    intros Hk Hz. apply antisymmetry.
+    - apply join_lub; [apply join_ub_l | ].
+      unfold ext at 1, FCD.ext. apply fsup_lub. intros U HU.
+      destruct (Hz U HU) as (p & Hp & HpU).
+      etransitivity. { unfold FCD.gen. apply (finf_lb p). exact HpU. }
+      apply join_lub; [apply join_ub_l | ].
+      apply join_r. apply ext_at; assumption.
+    - apply join_lub; [apply join_ub_l | ].
+      apply join_r. apply ext_mono. intros s. apply join_ub_r.
+  Qed.
+
+  Lemma pbind_bind_ang {E A B C} (g : B -> t E C) (f : A -> t E B)
+        (p : play E A) :
+    (forall a, angelic (f a)) ->
+    bind g (pbind f p) = pbind (fun a => bind g (f a)) p.
+  Proof.
+    intros Hf. induction p as [a | X m | X m n q IHq]; cbn [pbind].
+    - reflexivity.
+    - rewrite bind_emb. reflexivity.
+    - rewrite (Sup.mor_join (bind g)), bind_emb, bind_pcext.
+      rewrite <- IHq, pcext_bind. cbn [pbind].
+      apply join_ext_join_ang.
+      + intros s1 s2 Hs. apply pcext_mono. apply pbind_pmor. exact Hs.
+      + apply angelic_pbind. exact Hf.
+  Qed.
+
+  Lemma bind_bind_ang {E A B C} (g : B -> t E C) (f : A -> t E B)
+        (x : t E A) :
+    (forall a, angelic (f a)) ->
+    bind g (bind f x) = bind (fun a => bind g (f a)) x.
+  Proof.
+    intros Hf. rewrite bind_ext_ext. unfold bind at 2.
+    f_equal. apply functional_extensionality. intros p.
+    apply (pbind_bind_ang g f p Hf).
+  Qed.
+
+  (** ** Substitution laws for angelic layers
+
+    The three laws of substitution are false in general: see the
+    counterexamples at the end of this file.  They hold for angelic
+    substitutions.
+
+    The first is the unit law.  [papply] commits to the answer [n] of
+    a move before the substituted call has run; for a single play of
+    that call, the right [n] can be read off the play. *)
+
+  Lemma emb_le_guard {E ar} (r : play E ar) :
+    (exists n, emb r [= pbind (fun n' => sup H : n' = n, emb (pret n)) r) \/
+    emb r [= pbind (fun _ => bot) r.
+  Proof.
+    induction r as [v | X e | X e a r IHr]; cbn [pbind].
+    - left. exists v. apply (sup_at eq_refl). reflexivity.
+    - right. reflexivity.
+    - destruct IHr as [[n Hn] | H]; [left; exists n | right];
+        apply join_r; rewrite <- pcext_emb; apply pcext_mono; assumption.
+  Qed.
+
+  Lemma apply_int_r_ang {E F ar} (m : F ar) (f : subst E F) :
+    angelic (f ar m) ->
     apply f (int m) = f ar m.
-  Admitted.
+  Proof.
+    intros Hf. apply antisymmetry; [apply apply_int_r_le | ].
+    intros U HU. destruct (Hf U HU) as (r & Hr & HrU).
+    assert (H : emb r [= apply f (int m)).
+    {
+      unfold int. rewrite (Sup.mor (f := apply f)).
+      destruct (emb_le_guard r) as [[n Hn] | Hn].
+      - apply (sup_at (Some n)). rewrite apply_emb. cbn [papply].
+        etransitivity; [exact Hn | ].
+        rewrite <- bind_emb. apply bind_arg_mono. exact Hr.
+      - apply (sup_at None). rewrite apply_emb. cbn [papply].
+        etransitivity; [exact Hn | ].
+        rewrite <- bind_emb. apply bind_arg_mono. exact Hr.
+    }
+    apply H. apply has_emb. exact HrU.
+  Qed.
 
-  Lemma apply_bind {E F A B} (f : subst E F) (g : A -> t F B) (x : t F A) :
-    apply f (bind g x) = bind (fun a => apply f (g a)) (apply f x).
-  Admitted.
+  (** For [apply_bind], the continuation has to be angelic as well as
+    the substitution.  The specification [y] that is run first is
+    arbitrary. *)
 
-  Lemma apply_assoc {E F G A} (f : subst E F) (g : subst F G) (x : t G A) :
+  Lemma pbind_sup {E A B I} (g : I -> A -> t E B) (r : play E A) :
+    pbind (fun a => sup i, g i a) r =
+    pbind (fun _ => bot) r || (sup i, pbind (g i) r).
+  Proof.
+    induction r as [v | X e | X e a r IHr]; cbn [pbind].
+    - symmetry. apply join_bot_l.
+    - apply antisymmetry.
+      + apply join_ub_l.
+      + apply join_lub; [reflexivity | ].
+        apply sup_lub. intros i. reflexivity.
+    - rewrite IHr.
+      rewrite (Sup.mor_join (pcext e a)), (Sup.mor (f := pcext e a)).
+      apply antisymmetry.
+      + apply join_lub; [apply join_l, join_ub_l | ].
+        apply join_lub; [apply join_l, join_ub_r | ].
+        apply sup_lub. intros i. apply join_r. apply (sup_at i).
+        apply join_ub_r.
+      + apply join_lub.
+        * apply join_lub; [apply join_ub_l | ].
+          apply join_r, join_ub_l.
+        * apply sup_lub. intros i. apply join_lub; [apply join_ub_l | ].
+          apply join_r, join_r. apply (sup_at i). reflexivity.
+  Qed.
+
+  Lemma bind_sup_ang {E A B I} (g : I -> A -> t E B) (y : t E A) :
+    angelic y ->
+    bind (fun a => sup i, g i a) y =
+    bind (fun _ => bot) y || (sup i, bind (g i) y).
+  Proof.
+    intros Hy. apply antisymmetry.
+    - unfold bind at 1. rewrite ext_angelic; [ | typeclasses eauto | exact Hy].
+      apply fsup_lub. intros r Hr. rewrite pbind_sup.
+      apply join_lub.
+      + apply join_l. apply ext_at; [typeclasses eauto | exact Hr].
+      + apply sup_lub. intros i. apply join_r. apply (sup_at i).
+        apply ext_at; [typeclasses eauto | exact Hr].
+    - apply join_lub.
+      + apply bind_mono. intros a. apply bot_lb.
+      + apply sup_lub. intros i. apply bind_mono. intros a.
+        apply (sup_at i). reflexivity.
+  Qed.
+
+  Lemma papplies_bind_ang {E F A B} (f : subst E F) (h : A -> t F B)
+        (p : play F A) :
+    angelic_subst f -> (forall a, angelic (h a)) ->
+    apply f (pbind h p) = bind (fun a => apply f (h a)) (papply f p).
+  Proof.
+    intros Hf Hh. induction p as [a | X m | X m n q IHq]; cbn [pbind papply].
+    - rewrite bind_emb. reflexivity.
+    - rewrite apply_emb. cbn [papply].
+      rewrite bind_bind_ang by (intros _; apply angelic_bot).
+      f_equal. apply functional_extensionality. intros _.
+      symmetry. apply (Sup.mor_bot (bind _)).
+    - assert (Hz : angelic (pbind h q)) by (apply angelic_pbind; exact Hh).
+      transitivity
+        (bind (fun _ => bot) (f X m) ||
+         (sup i : {s | emb s [= pbind h q},
+            bind (fun n' => sup H : n' = n, papply f (proj1_sig i)) (f X m))).
+      + rewrite (Sup.mor_join (apply f)), apply_emb. cbn [papply].
+        f_equal. unfold pcext.
+        rewrite (ext_ext (apply f) (pcons_emb m n)).
+        rewrite ext_angelic; [ | | exact Hz].
+        * unfold fsup. f_equal. apply functional_extensionality.
+          intros [s Hs]. cbn [proj1_sig]. unfold pcons_emb.
+          rewrite apply_emb. reflexivity.
+        * intros s1 s2 Hs. apply apply_arg_mono. apply pcons_emb_pmor.
+          exact Hs.
+      + symmetry.
+        rewrite bind_bind_ang.
+        2: { intros n'. apply angelic_sup. intros _.
+             apply angelic_papply. exact Hf. }
+        rewrite <- bind_sup_ang by apply Hf.
+        f_equal. apply functional_extensionality. intros n'.
+        rewrite (Sup.mor (f := bind _)).
+        transitivity (sup H : n' = n, apply f (pbind h q)).
+        { f_equal. apply functional_extensionality. intros _.
+          symmetry. apply IHq. }
+        unfold apply. rewrite ext_angelic; [ | typeclasses eauto | exact Hz].
+        unfold fsup. apply antisymmetry.
+        * apply sup_lub. intros H. apply sup_lub. intros i.
+          apply (sup_at i). apply (sup_at H). reflexivity.
+        * apply sup_lub. intros i. apply sup_lub. intros H.
+          apply (sup_at H). apply (sup_at i). reflexivity.
+  Qed.
+
+  Lemma apply_bind_ang {E F A B} (f : subst E F) (h : A -> t F B) (y : t F A) :
+    angelic_subst f -> (forall a, angelic (h a)) ->
+    apply f (bind h y) = bind (fun a => apply f (h a)) (apply f y).
+  Proof.
+    intros Hf Hh. rewrite apply_bind_ext, bind_apply_ext.
+    f_equal. apply functional_extensionality. intros p.
+    apply papplies_bind_ang; assumption.
+  Qed.
+
+  (** Associativity of composition only uses [apply_bind] with the
+    continuations that [papply] itself builds, which are angelic as
+    soon as the substitution is.  So angelic substitutions form a
+    category, acting on arbitrary specifications. *)
+
+  Lemma papply_compose_ang {E F G A} (f : subst E F) (g : subst F G)
+        (p : play G A) :
+    angelic_subst f -> angelic_subst g ->
+    apply f (papply g p) = papply (compose g f) p.
+  Proof.
+    intros Hf Hg. induction p as [a | X m | X m n q IHq]; cbn [papply].
+    - rewrite apply_emb. reflexivity.
+    - rewrite apply_bind_ang; [ | exact Hf | intros _; apply angelic_bot].
+      unfold compose. f_equal.
+      apply functional_extensionality. intros _.
+      apply (Sup.mor_bot (apply f)).
+    - rewrite apply_bind_ang; [ | exact Hf | ].
+      + unfold compose. f_equal.
+        apply functional_extensionality. intros n'.
+        rewrite (Sup.mor (f := apply f)). f_equal.
+        apply functional_extensionality. intros Hn'. apply IHq.
+      + intros n'. apply angelic_sup. intros _.
+        apply angelic_papply. exact Hg.
+  Qed.
+
+  Lemma apply_assoc_ang {E F G A} (f : subst E F) (g : subst F G) (x : t G A) :
+    angelic_subst f -> angelic_subst g ->
     apply f (apply g x) = apply (compose g f) x.
-  Admitted.
+  Proof.
+    intros Hf Hg. rewrite apply_ext_ext.
+    change (apply (compose g f) x) with (ext (papply (compose g f)) x).
+    f_equal. apply functional_extensionality. intros p.
+    apply papply_compose_ang; assumption.
+  Qed.
 
   (** ** Properties of [compose] *)
 
   Lemma compose_int_l {E F} (f : subst E F) :
+    angelic_subst f ->
     compose (@int F) f = f.
   Proof.
+    intros Hf.
     apply PProd.eq_ext. intros ar. apply PProd.eq_ext. intros m.
-    apply apply_int_r.
+    apply apply_int_r_ang. apply Hf.
   Qed.
 
   Lemma compose_assoc {E F G H} (f : subst E F) (g : subst F G) (h : subst G H) :
+    angelic_subst f -> angelic_subst g ->
     compose (compose h g) f = compose h (compose g f).
   Proof.
+    intros Hf Hg.
     apply PProd.eq_ext. intros ar. apply PProd.eq_ext. intros m.
-    apply apply_assoc.
+    apply apply_assoc_ang; assumption.
   Qed.
 
 End ISpec.
@@ -2499,6 +2864,276 @@ Corollary bind_bind_lem {E A B C} (g : B -> ISpec.t E C) (f : A -> ISpec.t E B)
 Proof.
   intros Hlem. apply ISpec.bind_bind. apply codist_t_iff. assumption.
 Qed.
+
+(** * Counterexamples to the unrestricted substitution laws
+
+  The classical development admitted [apply_int_r], [apply_bind] and
+  [apply_assoc] for arbitrary substitutions.  The first two are
+  false, and no logical principle will help: the counterexamples
+  below use nothing but the two extensionality axioms.  What goes
+  wrong is the order of the choices.
+
+  - A play records the answer [n] of each of its moves, and
+    [ISpec.int m] is the join over [n] of the plays [m n n].  So
+    [ISpec.papply] has to commit to [n] before the substituted call
+    has run.  A substitution that chooses its answer demonically is
+    never consistent with that commitment, and substituting it into
+    [int m] gives [bot].
+
+  - [ISpec.apply] is an extension over the plays of its argument, so
+    it resolves the demonic choices of the argument first and the
+    angelic choices of the substitution afterwards, wherever they
+    occur in the program.  In [bind k (apply f x)] the choices of
+    the continuation come after those of [f], as they should.
+
+  Both problems disappear when the substitution and the
+  continuation are angelic, which is the case treated in [ISpec]. *)
+
+Module ISpecCounterexamples.
+
+  Import ISpec.
+
+  Definition uall (C : poset) : Upset.upset C.
+  Proof.
+    refine {| Upset.uhas := fun _ => True |}.
+    intros x y Hxy H. exact H.
+  Defined.
+
+  Lemma has_emb_uall {E A} (p : play E A) :
+    Downset.has (emb p) (uall (play_poset E A)).
+  Proof.
+    intros q Hq. exact I.
+  Qed.
+
+  (** * [apply_int_r] is false
+
+    The substitution answers [flip] with a demonic choice of booleans. *)
+
+  Inductive Fsig : esig := flip : Fsig bool.
+  Definition Esig : esig := fun _ => Empty_set.
+
+  Definition coin : t Esig bool := ret true && ret false.
+
+  Definition f : subst Esig Fsig :=
+    fun ar (m : Fsig ar) =>
+      match m in Fsig ar return t Esig ar with flip => coin end.
+
+  Lemma apply_flip_bot : apply f (int flip) = bot.
+  Proof.
+    apply antisymmetry; [ | apply bot_lb].
+    unfold int. rewrite (Sup.mor (f := apply f)). apply sup_lub.
+    intros [n | ]; rewrite apply_emb; cbn [papply f]; unfold coin.
+    - destruct n.
+      + etransitivity. { apply bind_arg_mono. apply meet_lb_r. }
+        rewrite bind_ret_r. apply sup_lub. intros H. discriminate.
+      + etransitivity. { apply bind_arg_mono. apply meet_lb_l. }
+        rewrite bind_ret_r. apply sup_lub. intros H. discriminate.
+    - etransitivity. { apply bind_arg_mono. apply meet_lb_l. }
+      rewrite bind_ret_r. reflexivity.
+  Qed.
+
+  Lemma coin_inh : Downset.has coin (uall _).
+  Proof.
+    unfold coin. apply has_meet. split; apply has_emb_uall.
+  Qed.
+
+  Theorem apply_int_r_false :
+    ~ (forall E F ar (m : F ar) (f : subst E F), apply f (int m) = f ar m).
+  Proof.
+    intros H. specialize (H _ _ _ flip f). rewrite apply_flip_bot in H.
+    pose proof coin_inh as Hc. change coin with (f bool flip) in Hc.
+    rewrite <- H in Hc. apply has_bot in Hc. exact Hc.
+  Qed.
+
+
+  (** * [apply_bind] fails from left to right
+
+    With the same substitution, a continuation that is [top] makes the
+    left-hand side [top] while the right-hand side is [bot]. *)
+
+  Lemma mor_top {L M : ccdlattice} (g : L -> M) `{!Inf.Morphism g} :
+    top [= g top.
+  Proof.
+    unfold top at 2. rewrite (Inf.mor (f := g)). apply inf_glb. intros [ ].
+  Qed.
+
+  Theorem apply_bind_lr_false :
+    ~ (forall E F A B (f : subst E F) (h : A -> t F B) (x : t F A),
+          apply f (bind h x) [= bind (fun a => apply f (h a)) (apply f x)).
+  Proof.
+    intros H.
+    specialize (H _ _ _ bool f (fun _ => top) (int flip)).
+    rewrite apply_flip_bot in H.
+    rewrite (Sup.mor_bot (bind _)) in H.
+    assert (Ht : top [= apply f (bind (fun _ : bool => top : t Fsig bool) (int flip))).
+    { etransitivity; [ apply (mor_top (apply f)) | ].
+      apply (Sup.mor_ref (apply f)). { typeclasses eauto. }
+      etransitivity; [ | apply bind_arg_mono; unfold int; apply (sup_ub (Some true)) ].
+      rewrite bind_emb. cbn [pbind]. apply join_r.
+      apply (mor_top (pcext flip true)). }
+    assert (Hc : coin [= bot).
+    { etransitivity; [ apply top_ub | ]. etransitivity; eassumption. }
+    pose proof (Hc _ coin_inh) as Hb. apply has_bot in Hb. exact Hb.
+  Qed.
+
+  (** * [apply_bind] fails from right to left
+
+    This is the direction a proof on the side of the implementation
+    would use.  The substitution chooses demonically between returning
+    at once and performing [e] first; the continuation then chooses
+    angelically between [true] and [false].  On the left the angel
+    chooses after the demon, on the right before. *)
+
+  Inductive Gsig : esig := call : Gsig unit.
+  Inductive Hsig : esig := ev : Hsig unit.
+
+  Definition late {A} (a : A) : t Hsig A := emb (pcons ev tt (pret a)).
+
+  Definition g : subst Hsig Gsig :=
+    fun ar (m : Gsig ar) =>
+      match m in Gsig ar return t Hsig ar with
+        call => ret tt && late tt
+      end.
+
+  Definition hh (_ : unit) : t Gsig bool := ret true || ret false.
+  Definition xx : t Gsig unit := emb (pcons call tt (pret tt)).
+
+  Definition lower : t Hsig bool := ret true && late false.
+  Definition upper : t Hsig bool :=
+    (ret true && late true) || (ret false && late false).
+
+  Lemma guard_ret {E A} (a : A) :
+    (sup H : tt = tt, emb (pret a) : t E A) = ret a.
+  Proof.
+    apply antisymmetry.
+    - apply sup_lub. intros _. reflexivity.
+    - apply (sup_at eq_refl). reflexivity.
+  Qed.
+
+  Lemma bind_late {A B} (k : A -> t Hsig B) (a : A) :
+    bind k (late a) = emb (pmove ev) || pcext ev tt (k a).
+  Proof.
+    unfold late. rewrite bind_emb. reflexivity.
+  Qed.
+
+  Lemma late_le {A} (a : A) :
+    emb (pmove ev) || pcext ev tt (ret a) [= late a.
+  Proof.
+    unfold ret. rewrite pcext_emb. apply join_lub.
+    - apply emb_mor. constructor.
+    - reflexivity.
+  Qed.
+
+  Lemma papply_xx (b : bool) :
+    papply g (pcons call tt (pret b)) [= ret b && late b.
+  Proof.
+    cbn [papply g]. apply meet_glb.
+    - etransitivity. { apply bind_arg_mono. apply meet_lb_l. }
+      rewrite bind_ret_r, guard_ret. reflexivity.
+    - etransitivity. { apply bind_arg_mono. apply meet_lb_r. }
+      rewrite bind_late, guard_ret. apply late_le.
+  Qed.
+
+  Lemma rhs_upper : apply g (bind hh xx) [= upper.
+  Proof.
+    unfold xx. rewrite bind_emb. cbn [pbind]. unfold hh.
+    rewrite (Sup.mor_join (pcext call tt)).
+    rewrite !(Sup.mor_join (apply g)).
+    unfold ret. rewrite !pcext_emb, !apply_emb.
+    apply join_lub.
+    - cbn [papply g]. etransitivity. { apply bind_arg_mono. apply meet_lb_l. }
+      rewrite bind_ret_r. apply bot_lb.
+    - apply join_lub.
+      + apply join_l. apply papply_xx.
+      + apply join_r. apply papply_xx.
+  Qed.
+
+  Lemma kk_true : ret true [= apply g (hh tt).
+  Proof.
+    unfold hh. rewrite (Sup.mor_join (apply g)), apply_ret. apply join_ub_l.
+  Qed.
+
+  Lemma kk_false : ret false [= apply g (hh tt).
+  Proof.
+    unfold hh. rewrite (Sup.mor_join (apply g)), !apply_ret. apply join_ub_r.
+  Qed.
+
+  Lemma bind_meet {E A B} (k : A -> t E B) (x y : t E A) :
+    bind k (x && y) = bind k x && bind k y.
+  Proof.
+    unfold meet. rewrite (Inf.mor (f := bind k)). f_equal.
+    apply functional_extensionality. intros [ | ]; reflexivity.
+  Qed.
+
+  Lemma lhs_lower :
+    lower [= bind (fun a => apply g (hh a)) (apply g xx).
+  Proof.
+    unfold xx. rewrite apply_emb. cbn [papply g].
+    rewrite !bind_meet, bind_ret_r, guard_ret, bind_late, bind_ret_r.
+    rewrite (Sup.mor_join (bind _)), bind_emb. cbn [pbind].
+    unfold lower. apply meet_glb.
+    - etransitivity; [ apply meet_lb_l | ]. apply kk_true.
+    - etransitivity; [ apply meet_lb_r | ]. apply join_r.
+      rewrite guard_ret. unfold ret. rewrite pcext_emb, bind_emb. cbn [pbind]. apply join_r.
+      unfold late. rewrite <- pcext_emb.
+      apply (Sup.mor_ref (pcext ev tt)). { typeclasses eauto. }
+      apply kk_false.
+  Qed.
+
+  (** Two invariants of the prefix order tell the plays apart. *)
+
+  Definition is_ret {E A} (p : play E A) : bool :=
+    match p with pret _ => true | _ => false end.
+
+  Fixpoint retv {E A} (p : play E A) : option A :=
+    match p with
+      | pret a => Some a
+      | pmove _ => None
+      | pcons _ _ s => retv s
+    end.
+
+  Lemma pref_is_ret {E A} (p q : play E A) :
+    pref p q -> is_ret p = is_ret q.
+  Proof. induction 1; reflexivity. Qed.
+
+  Lemma pref_retv {E A} (p q : play E A) :
+    pref p q -> retv p = None \/ retv p = retv q.
+  Proof. induction 1; cbn; auto. Qed.
+
+  Definition wit : Upset.upset (play_poset Hsig bool).
+  Proof.
+    refine {| Upset.uhas := fun q : play_poset Hsig bool =>
+                pref (pret true) q \/ pref (pcons ev tt (pret false)) q |}.
+    intros p q Hpq [H | H]; [left | right]; eapply pref_trans; eauto.
+  Defined.
+
+  Lemma wit_lower : Downset.has lower wit.
+  Proof.
+    apply has_meet. split; apply has_emb; cbn.
+    - left. constructor.
+    - right. apply pref_refl.
+  Qed.
+
+  Lemma wit_upper : ~ Downset.has upper wit.
+  Proof.
+    unfold upper. rewrite has_join, !has_meet. unfold ret, late.
+    rewrite !has_emb. cbn.
+    intros [[_ [H | H]] | [[H | H] _]].
+    - apply pref_is_ret in H. discriminate.
+    - apply pref_retv in H. destruct H; discriminate.
+    - apply pref_retv in H. destruct H; discriminate.
+    - apply pref_is_ret in H. discriminate.
+  Qed.
+
+  Theorem apply_bind_rl_false :
+    ~ (forall E F A B (f : subst E F) (h : A -> t F B) (x : t F A),
+          bind (fun a => apply f (h a)) (apply f x) [= apply f (bind h x)).
+  Proof.
+    intros H. specialize (H _ _ _ _ g hh xx).
+    apply wit_upper. apply rhs_upper. apply H. apply lhs_lower. apply wit_lower.
+  Qed.
+
+End ISpecCounterexamples.
 
 
 
@@ -2672,8 +3307,7 @@ Module IRun.
   (** A play either returns a value or ends in an unanswered move,
     and which of the two is decided by structural recursion.  This is
     the only "case analysis on a disjunction" the development needs,
-    and it is why layer composition does not run into the excluded
-    middle the way [ISpec.apply_int_r] does. *)
+    and it is the one [ISpec.emb_le_guard] makes for the unit law. *)
 
   Fixpoint pval {E : esig} {X} (p : play E X) : option X :=
     match p with
@@ -3276,11 +3910,11 @@ Module IRun.
     apply rapply_rid.
   Qed.
 
-  (** The other unit law is the analogue of [ISpec.apply_int_r],
-    which is one of the three laws the FCD model leaves admitted.
-    Here it goes through: the case analysis it needs is whether the
-    play [w] returns a value or ends in an unanswered move, and that
-    is decided by [pval], not by excluded middle. *)
+  (** The other unit law is the analogue of [ISpec.apply_int_r_ang],
+    which the FCD model has for angelic substitutions only.  Here
+    every substitution is angelic.  The case analysis the law needs
+    is whether the play [w] returns a value or ends in an unanswered
+    move, and that is decided by [pval]. *)
 
   Theorem rcompose_rid_l {E F} (f : rsubst E F) :
     rcompose (rid F) f = f.
@@ -3443,9 +4077,9 @@ Module IRun.
     with [rcompose_assoc], [rcompose_rid_l] and [rcompose_rid_r] all
     proved, and [Print Assumptions] on each reporting only functional
     and propositional extensionality.  In particular the unit law
-    [rcompose_rid_l] is the analogue of [ISpec.apply_int_r], which the
-    FCD model leaves admitted and which we showed there to run into
-    codistributivity, i.e. excluded middle.
+    [rcompose_rid_l] is the analogue of [ISpec.apply_int_r_ang]; in the
+    FCD model the unrestricted law is false
+    ([ISpecCounterexamples.apply_int_r_false]).
 
     Three things made the difference, and all three are properties of
     [Downset.F] that [FCD.F] does not have.

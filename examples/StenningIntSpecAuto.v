@@ -58,38 +58,33 @@ Definition interleave {E X Y C A} (f : X -> C -> t E (X * C)) (g : Y -> C -> t E
 
 (** ** The network *)
 
-Inductive chan_op : Type -> Type :=
-  | send_data (n : nat) (v : val) : chan_op unit
-  | recv_data : chan_op (option (nat * val))
-  | send_ack (n : nat) : chan_op unit
-  | recv_ack : chan_op (option nat).
-
-Definition rx {E P} (h : list P) (b : nat) : t E (option P * nat) :=
-  match h with
-    | nil => ret (None, b)
-    | p :: _ =>
-      ret (Some p, b) &&
-      (inf {o : option P | b <> 0 /\ (o = None \/ exists q, o = Some q /\ In q h)},
-       ret (o, b - 1))
-  end.
-
-Record chan_state :=
-  mk_chan {
-    dchan : list (nat * val);
-    achan : list nat;
+Record network :=
+  mk_net {
+    data : list (nat * val);
+    acks : list nat;
     budget : nat;
   }.
 
-Definition L_chan {E} : forall ar, chan_op ar -> chan_state -> t E (ar * chan_state) :=
-  fun _ m '(mk_chan dc ac b) =>
-    match m with
-      | send_data n v => ret (tt, mk_chan ((n, v) :: dc) ac b)
-      | recv_data => p <- rx dc b; ret (fst p, mk_chan dc ac (snd p))
-      | send_ack n => ret (tt, mk_chan dc (n :: ac) b)
-      | recv_ack => p <- rx ac b; ret (fst p, mk_chan dc ac (snd p))
-    end.
+Definition send_data (n : nat) (v : val) '(mk_net dc ac b) : network :=
+  mk_net ((n, v) :: dc) ac b.
 
-Abbreviation net m c := (L_chan (E := io_sig) _ m c).
+Definition send_ack (n : nat) '(mk_net dc ac b) : network :=
+  mk_net dc (n :: ac) b.
+
+Definition rx_ok {P} (h : list P) (b : nat) (o : option P) (b' : nat) : Prop :=
+  (o = hd_error h /\ b' = b) \/
+  (b <> 0 /\ b' = b - 1 /\ (o = None \/ exists q, o = Some q /\ In q h)).
+
+Definition rx {E P} (h : list P) (b : nat) : t E (option P * nat) :=
+  inf {r | rx_ok h b (fst r) (snd r)}, ret r.
+
+Definition recv_data {E} '(mk_net dc ac b) : t E (option (nat * val) * network) :=
+  '(o, b') <- rx dc b;
+  ret (o, mk_net dc ac b').
+
+Definition recv_ack {E} '(mk_net dc ac b) : t E (option nat * network) :=
+  '(o, b') <- rx ac b;
+  ret (o, mk_net dc ac b').
 
 (** The specification of a channel operation, in the form [istep]
     uses: the possible outcomes, chosen by the network.  An inductive
@@ -104,12 +99,12 @@ Inductive rx_out {P} (b : nat) : list P -> option P -> nat -> Prop :=
 Global Instance rx_silent {E P} (h : list P) (b : nat) :
   Silent (E := E) (rx h b) (fun p => rx_out b h (fst p) (snd p)).
 Proof.
-  red. destruct h as [ | p h]; cbn.
-  - apply (finf_lb (None, b)). constructor.
-  - apply meet_glb.
-    + apply (finf_lb (Some p, b)). constructor.
-    + apply finf_glb. intros o [Hb Ho]. apply (finf_lb (o, b - 1)). cbn.
-      destruct Ho as [-> | (q & -> & Hq)]; constructor; auto.
+  red. unfold rx. apply finf_glb. intros [o b'] Hok.
+  apply (finf_lb (o, b')). cbn [fst snd] in *.
+  destruct Hok as [[-> ->] | (Hb & -> & [-> | (q & -> & Hq)])].
+  - destruct h; constructor.
+  - constructor. exact Hb.
+  - constructor; assumption.
 Qed.
 
 
@@ -117,36 +112,33 @@ Qed.
 
 Definition sender_state : Type := nat * option val.
 
-Definition sender_step (x : sender_state) (c : chan_state) :
-  t io_sig (sender_state * chan_state) :=
+Definition sender_step (x : sender_state) (c : network) :
+  t io_sig (sender_state * network) :=
   match x with
     | (s, None) =>
       v <- int input;
       ret ((s, Some v), c)
     | (s, Some v) =>
-      '(_, c) <- net (send_data s v) c;
-      '(a, c) <- net recv_ack c;
+      '(a, c) <- recv_ack (send_data s v c);
       ret (match a with
              | Some n => if Nat.eqb n (S s) then (S s, None) else (s, Some v)
              | None => (s, Some v)
            end, c)
   end.
 
-Definition receiver_step (e : nat) (c : chan_state) : t io_sig (nat * chan_state) :=
-  '(p, c) <- net recv_data c;
+Definition receiver_step (e : nat) (c : network) : t io_sig (nat * network) :=
+  '(p, c) <- recv_data c;
   match p with
     | None => ret (e, c)
     | Some (n, w) =>
       if Nat.eqb n e then
         _ <- int (output w);
-        '(_, c) <- net (send_ack (S e)) c;
-        ret (S e, c)
+        ret (S e, send_ack (S e) c)
       else
-        '(_, c) <- net (send_ack e) c;
-        ret (e, c)
+        ret (e, send_ack e c)
   end.
 
-Definition config : Type := sender_state * nat * chan_state.
+Definition config : Type := sender_state * nat * network.
 
 Definition impl (σ : config) : t io_sig False :=
   interleave sender_step receiver_step σ.
@@ -159,7 +151,8 @@ Qed.
 
 (** One round is unfolded on demand by [istep]. *)
 
-Global Hint Unfold both sender_step receiver_step L_chan : ispec.
+Global Hint Unfold both sender_step receiver_step recv_data recv_ack
+  send_data send_ack : ispec.
 
 
 (** ** Invariants *)
@@ -168,18 +161,18 @@ Inductive good : config -> spec_state -> Prop :=
   | good_idle s dc ac b :
       Forall (fun p => fst p < s) dc ->
       Forall (fun a => a <= s) ac ->
-      good ((s, None), s, mk_chan dc ac b) Ready
+      good ((s, None), s, mk_net dc ac b) Ready
   | good_acking s v dc ac b :
       Forall (fun p => fst p <= s) dc ->
       Forall (fun a => a <= S s) ac ->
-      good ((s, Some v), S s, mk_chan dc (S s :: ac) b) Ready
+      good ((s, Some v), S s, mk_net dc (S s :: ac) b) Ready
   | good_sending s v dc ac b :
       Forall (fun p => fst p < s \/ p = (s, v)) dc ->
       Forall (fun a => a <= s) ac ->
-      good ((s, Some v), s, mk_chan dc ac b) (Pending v).
+      good ((s, Some v), s, mk_net dc ac b) (Pending v).
 
 Lemma good_init b :
-  good ((0, None), 0, mk_chan nil nil b) Ready.
+  good ((0, None), 0, mk_net nil nil b) Ready.
 Proof.
   constructor; constructor.
 Qed.
@@ -277,7 +270,7 @@ Qed.
 (** ** Correctness *)
 
 Theorem stenning_correct b :
-  reliable Ready [= impl ((0, None), 0, mk_chan nil nil b).
+  reliable Ready [= impl ((0, None), 0, mk_net nil nil b).
 Proof.
   unfold reliable.
   iloop (fun q σ => good σ q) impl; [ | apply good_init ].

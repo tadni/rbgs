@@ -477,88 +477,88 @@ Definition interleave {E X Y C A} (f : X -> C -> t E (X * C)) (g : Y -> C -> t E
 (** The sender and the receiver communicate through two channels: the
     data channel carries packets [(n, v)] made of a sequence number and
     a message, and the acknowledgment channel carries sequence numbers
-    back to the sender.  These are the operations on the channels: *)
+    back to the sender.
 
-Inductive chan_op : Type -> Type :=
-  | send_data (n : nat) (v : val) : chan_op unit
-  | recv_data : chan_op (option (nat * val))
-  | send_ack (n : nat) : chan_op unit
-  | recv_ack : chan_op (option nat).
+    A channel is modelled by the history of all the packets ever sent
+    on it, the most recent first.  The state of the network consists
+    of the two histories, and of a _budget_ which is explained below. *)
 
-(** A channel is modelled by the history of all the packets ever sent
-    on it, the most recent first.  When asked for a packet, the
-    channel either returns the most recent one, or it misbehaves: it
-    loses the packet, returning [None], or it replays any packet from
-    its history.  Replaying captures both duplication and reordering.
-
-    The network is the adversary, so all of these choices are demonic.
-    To make the network fair, we give it a _budget_ [b]: every
-    misbehavior costs one unit, and a network with an empty budget
-    must behave.  The initial budget is arbitrary, and the protocol
-    cannot observe it: the protocol has to work for networks that
-    misbehave any finite number of times. *)
-
-Definition rx {E P} (h : list P) (b : nat) : t E (option P * nat) :=
-  match h with
-    | nil => ret (None, b)
-    | p :: _ =>
-      ret (Some p, b) &&
-      (inf {o : option P | b <> 0 /\ (o = None \/ exists q, o = Some q /\ In q h)},
-       ret (o, b - 1))
-  end.
-
-Record chan_state :=
-  mk_chan {
-    dchan : list (nat * val);
-    achan : list nat;
+Record network :=
+  mk_net {
+    data : list (nat * val);
+    acks : list nat;
     budget : nat;
   }.
 
-Definition L_chan {E} : forall ar, chan_op ar -> chan_state -> t E (ar * chan_state) :=
-  fun _ m '(mk_chan dc ac b) =>
-    match m with
-      | send_data n v => ret (tt, mk_chan ((n, v) :: dc) ac b)
-      | recv_data => p <- rx dc b; ret (fst p, mk_chan dc ac (snd p))
-      | send_ack n => ret (tt, mk_chan dc (n :: ac) b)
-      | recv_ack => p <- rx ac b; ret (fst p, mk_chan dc ac (snd p))
-    end.
+(** Sending a packet adds it to the history of its channel.  Nothing
+    can go wrong at this point, so sending is an ordinary function. *)
 
-(** The network has no visible behavior of its own, so its operations
-    are not events.  A process uses the network by calling [L_chan]
-    directly, passing the state of the channels along: [net m c]
-    performs the operation [m] on the channels [c], and returns the
-    answer together with the new state of the channels.
+Definition send_data (n : nat) (v : val) '(mk_net dc ac b) : network :=
+  mk_net ((n, v) :: dc) ac b.
 
-    (With [models/ISpecCoTree.v] one would instead write the processes
-    with network events, and substitute [L_chan] for them afterwards.
-    In [models/IntSpec.v] the law relating substitution and [bind] is
-    still open, so we take this more direct route.) *)
+Definition send_ack (n : nat) '(mk_net dc ac b) : network :=
+  mk_net dc (n :: ac) b.
 
-Abbreviation net m c := (L_chan (E := io_sig) _ m c).
+(** Receiving is where the network misbehaves.  When asked for a
+    packet, a channel either answers with the most recent one, if
+    there is one, or it misbehaves: it loses the packet, answering
+    [None], or it replays any packet from its history.  Replaying
+    captures both duplication and reordering.
 
-(** **** Exercise: 2 stars, standard (rx_ref)
+    To make the network fair, every misbehavior costs one unit of the
+    budget, and a network with an empty budget must behave.  The
+    initial budget is arbitrary, and the protocol cannot observe it:
+    the protocol has to work for networks that misbehave any finite
+    number of times.
 
-    The following lemma lists the possible outcomes of a channel.  It
-    is the only fact about [rx] we will use afterwards: [y] is below
-    [rx h b >>= f] if it is below all the possible continuations.
-
-    Hint: use [bind_meet].  [bind_inf] also applies to
-    [inf {o | P o}, ...] once [finf] is unfolded. *)
+    [rx_ok h b o b'] states that a channel with the history [h] may
+    answer [o] when the budget is [b], and that the budget is then
+    [b']. *)
 
 Definition rx_ok {P} (h : list P) (b : nat) (o : option P) (b' : nat) : Prop :=
   (o = hd_error h /\ b' = b) \/
   (b <> 0 /\ b' = b - 1 /\ (o = None \/ exists q, o = Some q /\ In q h)).
 
+(** The network is the adversary, so which of the possible answers we
+    get is a demonic choice. *)
+
+Definition rx {E P} (h : list P) (b : nat) : t E (option P * nat) :=
+  inf {r | rx_ok h b (fst r) (snd r)}, ret r.
+
+Definition recv_data {E} '(mk_net dc ac b) : t E (option (nat * val) * network) :=
+  '(o, b') <- rx dc b;
+  ret (o, mk_net dc ac b').
+
+Definition recv_ack {E} '(mk_net dc ac b) : t E (option nat * network) :=
+  '(o, b') <- rx ac b;
+  ret (o, mk_net dc ac b').
+
+(** The network has no visible behavior of its own, so none of this
+    involves events.  A process calls these operations directly, and
+    passes the state of the network along.
+
+    (With [models/ISpecCoTree.v] one would instead write the processes
+    with network events, and substitute a specification of the
+    network for them afterwards.  That does not work in
+    [models/IntSpec.v]: its substitution is only sound for layers
+    without demonic choice, and the network chooses its answers
+    demonically.  See [ISpecCounterexamples] there.) *)
+
+(** **** Exercise: 1 star, standard (rx_ref)
+
+    To show that [y] is below [rx h b >>= f], it suffices to consider
+    every possible answer of the channel.  This is the only fact
+    about [rx] we will use afterwards.
+
+    Hint: unfold [rx] and [finf], then use [bind_inf]. *)
+
 Lemma rx_ref {E P B} (h : list P) (b : nat) (y : t E B) (f : option P * nat -> t E B) :
   (forall o b', rx_ok h b o b' -> y [= f (o, b')) ->
   y [= rx h b >>= f.
 Proof.
-  intros H. destruct h as [ | p h]; cbn.
-  - rewrite bind_ret_r. apply H. left. auto.
-  - rewrite bind_meet. apply meet_glb.
-    + rewrite bind_ret_r. apply H. left. auto.
-    + unfold finf. rewrite bind_inf. apply inf_glb. intros [o [Hb Ho]]. cbn.
-      rewrite bind_ret_r. apply H. right. auto.
+  intros H. unfold rx, finf. rewrite bind_inf. apply inf_glb.
+  intros [[o b'] Hok]. cbn [proj1_sig]. rewrite bind_ret_r.
+  apply H. exact Hok.
 Qed.
 (** [] *)
 
@@ -575,15 +575,14 @@ Qed.
 
 Definition sender_state : Type := nat * option val.
 
-Definition sender_step (x : sender_state) (c : chan_state) :
-  t io_sig (sender_state * chan_state) :=
+Definition sender_step (x : sender_state) (c : network) :
+  t io_sig (sender_state * network) :=
   match x with
     | (s, None) =>
       v <- int input;
       ret ((s, Some v), c)
     | (s, Some v) =>
-      '(_, c) <- net (send_data s v) c;
-      '(a, c) <- net recv_ack c;
+      '(a, c) <- recv_ack (send_data s v c);
       ret (match a with
              | Some n => if Nat.eqb n (S s) then (S s, None) else (s, Some v)
              | None => (s, Some v)
@@ -596,25 +595,23 @@ Definition sender_step (x : sender_state) (c : chan_state) :
     application.  In any case the receiver acknowledges by sending
     back the number it now expects. *)
 
-Definition receiver_step (e : nat) (c : chan_state) : t io_sig (nat * chan_state) :=
-  '(p, c) <- net recv_data c;
+Definition receiver_step (e : nat) (c : network) : t io_sig (nat * network) :=
+  '(p, c) <- recv_data c;
   match p with
     | None => ret (e, c)
     | Some (n, w) =>
       if Nat.eqb n e then
         _ <- int (output w);
-        '(_, c) <- net (send_ack (S e)) c;
-        ret (S e, c)
+        ret (S e, send_ack (S e) c)
       else
-        '(_, c) <- net (send_ack e) c;
-        ret (e, c)
+        ret (e, send_ack e c)
   end.
 
 (** A _configuration_ of the system consists of the states of the two
     processes and of the network.  The behavior of a configuration is
     that of the two processes interleaved. *)
 
-Definition config : Type := sender_state * nat * chan_state.
+Definition config : Type := sender_state * nat * network.
 
 Definition impl (σ : config) : t io_sig False :=
   interleave sender_step receiver_step σ.
@@ -624,7 +621,7 @@ Definition impl (σ : config) : t io_sig False :=
     has been sent yet, implements a reliable channel, whatever the
     budget [b] of the network:
 
-      [reliable Ready [= impl ((0, None), 0, mk_chan nil nil b)]. *)
+      [reliable Ready [= impl ((0, None), 0, mk_net nil nil b)]. *)
 
 
 (* ################################################################# *)
@@ -645,25 +642,30 @@ Qed.
     next step depends on a value which is not known, typically the
     outcome of a channel. *)
 
+Ltac simp :=
+  cbn beta iota delta [fst snd send_data send_ack].
+
 Ltac run :=
   match goal with
     | |- _ [= bind _ (bind _ _) =>
       apply reassoc
     | |- _ [= bind _ (ret _) =>
-      rewrite bind_ret_r; cbn beta iota delta [fst snd]
-    | |- _ [= bind _ (L_chan _ _ _) =>
-      cbn beta iota delta [L_chan]
+      rewrite bind_ret_r; simp
+    | |- _ [= bind _ (recv_data _) =>
+      unfold recv_data; simp
+    | |- _ [= bind _ (recv_ack _) =>
+      unfold recv_ack; simp
     | |- _ [= bind _ (rx _ _) =>
       apply rx_ref;
       let o := fresh "o" in let b := fresh "b" in let Hok := fresh "Hok" in
-      intros o b Hok; cbn beta iota delta [fst snd]
+      intros o b Hok; simp
     | |- bind _ (int ?m) [= bind _ (int ?m) =>
-      apply bind_mono; let v := fresh "v" in intros v; cbn beta iota delta [fst snd]
+      apply bind_mono; let v := fresh "v" in intros v; simp
   end.
 
-(** Note that when [run] meets a channel operation, it introduces the
-    outcome [o], the new budget [b], and the hypothesis [Hok] which
-    describes the possible outcomes.  When it meets an event, the goal
+(** Note that when [run] meets a channel, it introduces the answer
+    [o], the new budget [b], and the hypothesis [Hok] which describes
+    the possible answers.  When it meets an event, the goal
     must have the form [int m >>= k [= int m >>= k'], and [run] moves
     on to the continuations. *)
 
@@ -686,18 +688,18 @@ Inductive good : config -> spec_state -> Prop :=
   | good_idle s dc ac b :
       Forall (fun p => fst p < s) dc ->
       Forall (fun a => a <= s) ac ->
-      good ((s, None), s, mk_chan dc ac b) Ready
+      good ((s, None), s, mk_net dc ac b) Ready
   | good_acking s v dc ac b :
       Forall (fun p => fst p <= s) dc ->
       Forall (fun a => a <= S s) ac ->
-      good ((s, Some v), S s, mk_chan dc (S s :: ac) b) Ready
+      good ((s, Some v), S s, mk_net dc (S s :: ac) b) Ready
   | good_sending s v dc ac b :
       Forall (fun p => fst p < s \/ p = (s, v)) dc ->
       Forall (fun a => a <= s) ac ->
-      good ((s, Some v), s, mk_chan dc ac b) (Pending v).
+      good ((s, Some v), s, mk_net dc ac b) (Pending v).
 
 Lemma good_init b :
-  good ((0, None), 0, mk_chan nil nil b) Ready.
+  good ((0, None), 0, mk_net nil nil b) Ready.
 Proof.
   constructor; constructor.
 Qed.
@@ -883,7 +885,7 @@ Qed.
     [progress_ready] and [progress_pending]. *)
 
 Theorem stenning_correct b :
-  reliable Ready [= impl ((0, None), 0, mk_chan nil nil b).
+  reliable Ready [= impl ((0, None), 0, mk_net nil nil b).
 Proof.
   apply (forever_ref spec_step (fun q σ => good σ q) impl); [ | apply good_init ].
   intros [ | v] σ Hσ; cbn [spec_step].
@@ -925,6 +927,6 @@ Qed.
     The budget bounds the misbehaviors of the network over its whole
     lifetime.  A weaker assumption gives each channel its own budget,
     which is reset to a demonically chosen value whenever the channel
-    behaves well.  Adapt [L_chan], the invariants and the measure, and
+    behaves well.  Adapt [rx], the invariants and the measure, and
     check that the protocol is still correct. *)
 (** [] *)
