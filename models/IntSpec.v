@@ -2148,6 +2148,114 @@ Module ISpec.
     apply ext_mono. intros p. apply pbind_bind_le.
   Qed.
 
+  (** ** Associativity for inhabited continuations
+
+    The other inclusion fails only because [join_ext_absorb] has to
+    push [emb (pmove m)] out through the [inf]s of the normal form.
+    If the continuation is _inhabited_, that join is redundant to
+    begin with: [pcext m n z] already lies above [emb (pmove m)],
+    since each generator of [z] is an [inf] of plays starting with
+    [pcons m n].  So [bind_bind] holds without [codistributive]
+    whenever the outer continuation is inhabited everywhere.  The
+    inner one is unrestricted.
+
+    Inhabitedness has to be stated positively.  [x <> bot] gives
+    only its double negation, which is not enough constructively.
+    [ret], [emb] and [int] are inhabited, as are any [inf] of
+    inhabited elements and any [sup] with an inhabited member.
+    [bot] is not, nor is a [sup] over an unproved proposition. *)
+
+  Definition inh {E V} (x : t E V) :=
+    exists U, Downset.has x U.
+
+  Lemma pcext_above {E V X} (m : E X) (n : X) (z : t E V) :
+    inh z -> emb (pmove m) [= pcext m n z.
+  Proof.
+    intros [U HU]. unfold pcext, ext, FCD.ext, FCD.gen.
+    apply (fsup_at U); [assumption | ].
+    apply finf_glb. intros c _. unfold pcons_emb.
+    apply emb_mor. constructor.
+  Qed.
+
+  Lemma pbind_inh {E A B} (g : A -> t E B) (s : play E A) :
+    (forall a, inh (g a)) -> inh (pbind g s).
+  Proof.
+    intros Hg. induction s; cbn [pbind].
+    - apply Hg.
+    - exists (@Upset.up (play_poset E B) (pmove m)).
+      apply FCD.emb_has. intros ? H. exact H.
+    - exists (@Upset.up (play_poset E B) (pmove m)).
+      apply has_join. left.
+      apply FCD.emb_has. intros ? H. exact H.
+  Qed.
+
+  Lemma pbind_bind_inh {E A B C} (g : B -> t E C) (f : A -> t E B)
+        (p : play E A) :
+    (forall b, inh (g b)) ->
+    bind g (pbind f p) = pbind (fun a => bind g (f a)) p.
+  Proof.
+    intros Hg. induction p as [a | X m | X m n q IHq]; cbn [pbind].
+    - reflexivity.
+    - rewrite bind_emb. reflexivity.
+    - rewrite (Sup.mor_join (bind g)), bind_emb, bind_pcext.
+      rewrite <- IHq, pcext_bind. cbn [pbind]. f_equal. f_equal.
+      apply functional_extensionality. intros s.
+      apply antisymmetry.
+      + apply join_lub; [ | reflexivity].
+        apply pcext_above, pbind_inh, Hg.
+      + apply join_ub_r.
+  Qed.
+
+  Lemma bind_bind_inh {E A B C} (g : B -> t E C) (f : A -> t E B)
+        (x : t E A) :
+    (forall b, inh (g b)) ->
+    bind g (bind f x) = bind (fun a => bind g (f a)) x.
+  Proof.
+    intros Hg. rewrite bind_ext_ext. unfold bind.
+    f_equal. apply functional_extensionality. intros p.
+    apply (pbind_bind_inh g f p Hg).
+  Qed.
+
+  (** ** Associativity when the inner continuation returns
+
+    When [f] only transforms the returned value, [bind f] relabels the
+    final [pret] of each play and nothing else, so no join is
+    introduced and associativity holds outright. *)
+
+  Fixpoint pfmap {E A B} (h : A -> B) (p : play E A) : play E B :=
+    match p with
+      | pret a => pret (h a)
+      | pmove m => pmove m
+      | pcons m n q => pcons m n (pfmap h q)
+    end.
+
+  Lemma pbind_ret_map {E A B} (h : A -> B) (p : play E A) :
+    pbind (fun a => ret (h a)) p = emb (pfmap h p).
+  Proof.
+    induction p; cbn [pbind pfmap]; try reflexivity.
+    rewrite IHp, pcext_emb.
+    apply antisymmetry.
+    - apply join_lub.
+      + apply emb_mor. constructor.
+      + reflexivity.
+    - apply join_ub_r.
+  Qed.
+
+  Lemma pbind_pfmap {E A B C} (g : B -> t E C) (h : A -> B) (p : play E A) :
+    pbind g (pfmap h p) = pbind (fun a => g (h a)) p.
+  Proof.
+    induction p; cbn [pbind pfmap]; try reflexivity.
+    rewrite IHp. reflexivity.
+  Qed.
+
+  Lemma bind_bind_ret {E A B C} (g : B -> t E C) (h : A -> B) (x : t E A) :
+    bind g (bind (fun a => ret (h a)) x) = bind (fun a => g (h a)) x.
+  Proof.
+    rewrite bind_ext_ext. unfold bind at 2.
+    f_equal. apply functional_extensionality. intros p.
+    rewrite pbind_ret_map, bind_emb, pbind_pfmap. reflexivity.
+  Qed.
+
   (** ** Applying a substitution to a single interaction
 
     One inclusion is choice-free: every play that [apply f (int m)]
